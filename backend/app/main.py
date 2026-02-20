@@ -1,12 +1,13 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import time
 import os
-from . import schemas
+from . import schemas, lifecycle
 from uuid import UUID
 
 app = FastAPI(title="GhostOS Kernel")
+
 
 # In-memory database for agents
 db: List[schemas.Agent] = []
@@ -52,6 +53,30 @@ def get_agent(agent_id: UUID):
         if agent.id == agent_id:
             return agent
     raise HTTPException(status_code=404, detail="Agent not found")
+
+@app.post("/agents/{agent_id}/start", response_model=schemas.Agent)
+async def start_agent_endpoint(agent_id: UUID, background_tasks: BackgroundTasks):
+    """
+    Start a specific agent.
+    """
+    agent = get_agent(agent_id) # Re-use existing get_agent logic
+    if agent.state.status == "RUNNING":
+        raise HTTPException(status_code=400, detail="Agent is already running.")
+    
+    background_tasks.add_task(lifecycle.start_agent, agent)
+    return agent
+
+@app.post("/agents/{agent_id}/stop", response_model=schemas.Agent)
+async def stop_agent_endpoint(agent_id: UUID, background_tasks: BackgroundTasks):
+    """
+    Stop a specific agent.
+    """
+    agent = get_agent(agent_id)
+    if agent.state.status != "RUNNING":
+        raise HTTPException(status_code=400, detail="Agent is not running.")
+        
+    background_tasks.add_task(lifecycle.stop_agent, agent)
+    return agent
 
 @app.delete("/agents/{agent_id}", status_code=204)
 def terminate_agent(agent_id: UUID):
