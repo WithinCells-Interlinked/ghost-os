@@ -14,6 +14,7 @@ class AgentState(BaseModel):
 class Agent(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
+    start_command: str # The actual command to run the agent
     persona_id: str # Link to a persona definition
     tool_ids: List[str] = []
     state: AgentState = Field(default_factory=AgentState)
