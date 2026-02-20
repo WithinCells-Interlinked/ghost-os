@@ -2,14 +2,16 @@ from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any
 import time
-import os
-from . import schemas, lifecycle
+from . import schemas, lifecycle, messaging, persistence
 from uuid import UUID
 
-app = FastAPI(title="GhostOS Kernel")
+app = FastAPI(
+    title="GhostOS Kernel",
+    description="The Meta-Kernel for Agent Autonomy.",
+    version="0.1.0-alpha"
+)
 
-
-# In-memory database for agents
+# In-memory database for agents (to be migrated to Supabase)
 db: List[schemas.Agent] = []
 
 class SystemDirective(BaseModel):
@@ -26,30 +28,22 @@ def health():
     return {
         "status": "online",
         "kernel_version": "0.1.0-alpha",
-        "identity": "Cells"
+        "identity": "Cells",
+        "node": "Pi-Node-04"
     }
 
 @app.post("/agents/", response_model=schemas.Agent)
 def create_agent(agent: schemas.Agent):
-    """
-    Create a new agent instance and save the state.
-    """
     db.append(agent)
     persistence.save_db(db)
     return agent
 
 @app.get("/agents/", response_model=List[schemas.Agent])
 def list_agents():
-    """
-    List all running agent instances.
-    """
     return db
 
 @app.get("/agents/{agent_id}", response_model=schemas.Agent)
 def get_agent(agent_id: UUID):
-    """
-    Get a specific agent by its ID.
-    """
     for agent in db:
         if agent.id == agent_id:
             return agent
@@ -57,59 +51,22 @@ def get_agent(agent_id: UUID):
 
 @app.post("/agents/{agent_id}/start", response_model=schemas.Agent)
 async def start_agent_endpoint(agent_id: UUID, background_tasks: BackgroundTasks):
-    """
-    Start a specific agent.
-    """
-    agent = get_agent(agent_id) # Re-use existing get_agent logic
+    agent = get_agent(agent_id)
     if agent.state.status == "RUNNING":
         raise HTTPException(status_code=400, detail="Agent is already running.")
     
     background_tasks.add_task(lifecycle.start_agent, agent)
     return agent
 
-@app.post("/agents/{agent_id}/stop", response_model=schemas.Agent)
-async def stop_agent_endpoint(agent_id: UUID, background_tasks: BackgroundTasks):
-    """
-    Stop a specific agent.
-    """
-    agent = get_agent(agent_id)
-    if agent.state.status != "RUNNING":
-        raise HTTPException(status_code=400, detail="Agent is not running.")
-        
-    background_tasks.add_task(lifecycle.stop_agent, agent)
-    return agent
-
-@app.delete("/agents/{agent_id}", status_code=204)
-def terminate_agent(agent_id: UUID):
-    """
-    Terminate an agent and save the state.
-    """
-    agent_to_terminate = None
-    for agent in db:
-        if agent.id == agent_id:
-            agent_to_terminate = agent
-            break
-    if not agent_to_terminate:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    db.remove(agent_to_terminate)
-    persistence.save_db(db)
-    return {}
-
-@app.post("/directives")
-def queue_directive(directive: SystemDirective):
-    directives_log.append(directive.dict())
-    return {"status": "accepted", "id": directive.id}
-
-@app.get("/directives")
-def list_directives():
-    return directives_log
+@app.post("/messages/", status_code=201)
+def send_message(message: messaging.Message):
+    return messaging.message_bus.send_message(message)
 
 @app.get("/state")
 def get_system_state():
     return {
         "uptime": time.time(),
-        "active_projects": ["EchoVault", "FlowSync", "Aetheria", "GhostOS"],
+        "active_kernels": ["GhostOS-Main"],
         "resource_usage": "nominal",
-        "quota_warning": True # Vercel limit hit
+        "interlinked": True
     }
