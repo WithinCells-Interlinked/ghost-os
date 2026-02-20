@@ -32,9 +32,10 @@ def health():
 @app.post("/agents/", response_model=schemas.Agent)
 def create_agent(agent: schemas.Agent):
     """
-    Create a new agent instance.
+    Create a new agent instance and save the state.
     """
     db.append(agent)
+    persistence.save_db(db)
     return agent
 
 @app.get("/agents/", response_model=List[schemas.Agent])
@@ -81,7 +82,7 @@ async def stop_agent_endpoint(agent_id: UUID, background_tasks: BackgroundTasks)
 @app.delete("/agents/{agent_id}", status_code=204)
 def terminate_agent(agent_id: UUID):
     """
-    Terminate an agent.
+    Terminate an agent and save the state.
     """
     agent_to_terminate = None
     for agent in db:
@@ -92,6 +93,7 @@ def terminate_agent(agent_id: UUID):
         raise HTTPException(status_code=404, detail="Agent not found")
     
     db.remove(agent_to_terminate)
+    persistence.save_db(db)
     return {}
 
 @app.post("/directives")
